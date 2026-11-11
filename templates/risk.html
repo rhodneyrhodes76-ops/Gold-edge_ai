@@ -1,0 +1,235 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gold AI - Professional Risk Manager</title>
+<style>
+body {
+    background: #10141d;
+    color: white;
+    font-family: Arial, sans-serif;
+    padding: 18px;
+}
+.card {
+    background: #1c2533;
+    padding: 18px;
+    border-radius: 12px;
+    margin-bottom: 18px;
+}
+h2 { color: #f5bd45; }
+input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px;
+    margin: 7px 0 14px;
+    border-radius: 7px;
+    border: 0;
+}
+button {
+    background: #f5bd45;
+    padding: 12px;
+    border: 0;
+    border-radius: 7px;
+    font-weight: bold;
+    width: 100%;
+    margin-top: 8px;
+}
+.danger { background: #d94b4b; color: white; }
+.result {
+    color: #52e39a;
+    font-size: 17px;
+    line-height: 1.7;
+    margin-top: 12px;
+}
+.stat {
+    background: #293548;
+    padding: 12px;
+    border-radius: 8px;
+    margin: 8px 0;
+}
+.stat span { color: #f5bd45; }
+.trade {
+    border-bottom: 1px solid #465268;
+    padding: 10px 0;
+    overflow-wrap: anywhere;
+}
+a { color: #f5bd45; }
+</style>
+</head>
+<body>
+
+<h1>GOLD AI</h1>
+<p>Professional Risk Manager & Trade Journal</p>
+
+<div class="card">
+<h2>Position Size Calculator</h2>
+
+<label>Account balance ($)</label>
+<input id="balance" type="number" value="100">
+
+<label>Risk (%)</label>
+<input id="risk" type="number" value="1" step="0.1">
+
+<label>Entry price</label>
+<input id="entry" type="number" step="0.01">
+
+<label>Stop loss price</label>
+<input id="stop" type="number" step="0.01">
+
+<label>Contract size (oz per lot)</label>
+<input id="contract" type="number" value="100">
+
+<button onclick="calculate()">CALCULATE RISK</button>
+<div class="result" id="result"></div>
+</div>
+
+<div class="card">
+<h2>Trade Journal</h2>
+
+<label>Trade symbol</label>
+<input id="symbol" value="XAUUSD">
+
+<label>Trade result ($)</label>
+<input id="profit" type="number" step="0.01"
+placeholder="Example: 5 or -3">
+
+<button onclick="saveTrade()">SAVE PAPER TRADE</button>
+</div>
+
+<div class="card">
+<h2>Trading Statistics</h2>
+<div class="stat">Total trades: <span id="total">0</span></div>
+<div class="stat">Winning trades: <span id="wins">0</span></div>
+<div class="stat">Losing trades: <span id="losses">0</span></div>
+<div class="stat">Win rate: <span id="rate">0%</span></div>
+<div class="stat">Total profit: <span id="profitTotal">$0.00</span></div>
+<div class="stat">Total loss: <span id="lossTotal">$0.00</span></div>
+<div class="stat">Net result: <span id="net">$0.00</span></div>
+</div>
+
+<div class="card">
+<h2>Trade History</h2>
+<div id="journal"></div>
+<button class="danger" onclick="deleteTrades()">DELETE ALL HISTORY</button>
+</div>
+
+<p><a href="/">← Back to Gold AI Dashboard</a></p>
+
+<script>
+function getTrades() {
+    try {
+        return JSON.parse(localStorage.getItem("goldTrades") || "[]");
+    } catch (error) {
+        return [];
+    }
+}
+
+function calculate() {
+    const balance = Number(document.getElementById("balance").value);
+    const risk = Number(document.getElementById("risk").value);
+    const entry = Number(document.getElementById("entry").value);
+    const stop = Number(document.getElementById("stop").value);
+    const contract = Number(document.getElementById("contract").value);
+
+    if (!Number.isFinite(balance) || balance <= 0 ||
+        !Number.isFinite(risk) || risk <= 0 || risk > 100 ||
+        !Number.isFinite(entry) || entry <= 0 ||
+        !Number.isFinite(stop) || stop <= 0 ||
+        !Number.isFinite(contract) || contract <= 0 ||
+        entry === stop) {
+        document.getElementById("result").textContent =
+            "Please enter valid values.";
+        return;
+    }
+
+    const riskMoney = balance * risk / 100;
+    const distance = Math.abs(entry - stop);
+    const lot = riskMoney / (distance * contract);
+
+    document.getElementById("result").textContent =
+        "Money at risk: $" + riskMoney.toFixed(2) +
+        " | Stop distance: " + distance.toFixed(2) +
+        " | Estimated lot size: " + lot.toFixed(4);
+}
+
+function saveTrade() {
+    const symbol = document.getElementById("symbol").value.trim();
+    const profitInput = document.getElementById("profit").value;
+
+    if (!symbol || profitInput === "") {
+        alert("Enter a symbol and trade result.");
+        return;
+    }
+
+    const profit = Number(profitInput);
+
+    if (!Number.isFinite(profit)) {
+        alert("Enter a valid trade result.");
+        return;
+    }
+
+    const trades = getTrades();
+    trades.push({
+        symbol: symbol,
+        profit: profit,
+        date: new Date().toLocaleString()
+    });
+
+    localStorage.setItem("goldTrades", JSON.stringify(trades));
+    document.getElementById("profit").value = "";
+    showTrades();
+}
+
+function showTrades() {
+    const trades = getTrades();
+    const wins = trades.filter(t => t.profit > 0);
+    const losses = trades.filter(t => t.profit < 0);
+
+    const totalProfit = wins.reduce((sum, t) => sum + t.profit, 0);
+    const totalLoss = losses.reduce((sum, t) => sum + Math.abs(t.profit), 0);
+    const net = totalProfit - totalLoss;
+    const decided = wins.length + losses.length;
+    const rate = decided ? wins.length / decided * 100 : 0;
+
+    document.getElementById("total").textContent = trades.length;
+    document.getElementById("wins").textContent = wins.length;
+    document.getElementById("losses").textContent = losses.length;
+    document.getElementById("rate").textContent = rate.toFixed(1) + "%";
+    document.getElementById("profitTotal").textContent = "$" + totalProfit.toFixed(2);
+    document.getElementById("lossTotal").textContent = "$" + totalLoss.toFixed(2);
+    document.getElementById("net").textContent =
+        (net < 0 ? "-$" : "$") + Math.abs(net).toFixed(2);
+
+    const journal = document.getElementById("journal");
+    journal.replaceChildren();
+
+    if (trades.length === 0) {
+        journal.textContent = "No trades recorded yet.";
+        return;
+    }
+
+    trades.slice().reverse().forEach(t => {
+        const item = document.createElement("div");
+        item.className = "trade";
+        item.textContent = t.symbol + " | " +
+            (t.profit < 0 ? "-$" : "$") +
+            Math.abs(t.profit).toFixed(2) + " | " + t.date;
+        journal.appendChild(item);
+    });
+}
+
+function deleteTrades() {
+    if (confirm("Delete all saved paper trades?")) {
+        localStorage.removeItem("goldTrades");
+        showTrades();
+    }
+}
+
+showTrades();
+</script>
+
+</body>
+</html>
+

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOLD EDGE AI | XAUUSD Trading Intelligence</title>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+body{margin:0;background:#0b1220;color:#e8edf7;font-family:Arial,sans-serif;padding:15px}
+header{display:flex;justify-content:space-between;align-items:center}
+h1{font-size:22px;color:#f5c542}
+.card{background:#151f30;border:1px solid #26364c;border-radius:12px;padding:15px;margin:12px 0}
+.price{font-size:30px;font-weight:bold}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.value{font-size:19px;font-weight:bold;margin-top:7px}
+.muted{color:#94a3b8;font-size:12px}
+.signal{font-size:24px;font-weight:bold}
+#chart{height:350px;width:100%}
+button,select{background:#26364c;color:white;border:0;border-radius:7px;padding:10px}
+.green{color:#22c55e}.red{color:#ef4444}.gold{color:#f5c542}
+/* GOLD EDGE AI PREMIUM THEME */
+body {
+  background: #050505;
+  color: #ffffff;
+}
+
+header {
+  background: #101010;
+  border: 1px solid #b8860b;
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+h1 {
+  color: #f5c542;
+  letter-spacing: 1px;
+}
+
+h1::before {
+  content: "◆ ";
+  color: #f5c542;
+}
+
+.card {
+  background: linear-gradient(145deg, #171717, #080808);
+  border: 1px solid #8f6500;
+  box-shadow: 0 4px 15px #000000;
+}
+
+button, select {
+  background: #d4a514;
+  color: #080808;
+  font-weight: bold;
+
+.green {
+  color: #22c55e;
+}
+
+.red {
+  color: #ef4444;
+}
+</style>
+</head>
+<body>
+<header>
+<h1>GOLD EDGE AI</h1>
+<span class="muted">XAU/USD ANALYZER</span>
+</header>
+
+<div class="card">
+<div class="muted">CURRENT GOLD PRICE</div>
+<div class="price" id="price">Loading...</div>
+<div class="muted" id="updated">Waiting for market data</div>
+</div>
+
+<div class="card">
+<div class="muted">TIMEFRAME</div>
+<select id="timeframe" onchange="loadData()">
+<option value="5min">M5</option>
+<option value="15min" selected>M15</option>
+<option value="30min">M30</option>
+<option value="1h">H1</option>
+</select>
+<div id="chart"></div>
+</div>
+
+<div class="card">
+<div class="muted">TRADING SIGNAL</div>
+<div class="signal" id="signal">Loading...</div>
+<p id="reason" class="muted"></p>
+</div>
+
+<div class="grid">
+<div class="card">
+<div class="muted">MARKET TREND</div>
+<div class="value" id="trend">--</div>
+</div>
+<div class="card">
+<div class="muted">SETUP SCORE</div>
+<div class="value gold" id="score">--</div>
+</div>
+<div class="card">
+<div class="muted">RSI</div>
+<div class="value" id="rsi">--</div>
+</div>
+<div class="card">
+<div class="muted">ATR</div>
+<div class="value" id="atr">--</div>
+</div>
+</div>
+
+<div class="card">
+<h3>Trade Levels</h3>
+<div class="grid">
+<div><div class="muted">ENTRY</div><div class="value" id="entry">--</div></div>
+<div><div class="muted">STOP LOSS</div><div class="value red" id="sl">--</div></div>
+<div><div class="muted">TAKE PROFIT</div><div class="value green" id="tp">--</div></div>
+</div>
+</div>
+
+<div class="grid">
+<div class="card">
+<div class="muted">SUPPORT</div>
+<div class="value" id="support">--</div>
+</div>
+<div class="card">
+<div class="muted">RESISTANCE</div>
+<div class="value" id="resistance">--</div>
+</div>
+</div>
+
+<div class="card">
+<h3>Economic News Warning</h3>
+<p id="news" class="muted">Loading...</p>
+</div>
+
+<script>
+const chartElement=document.getElementById('chart');
+const chart=LightweightCharts.createChart(chartElement,{
+  width:chartElement.clientWidth,
+  height:350,
+  layout:{background:{color:'#080808'},textColor:'#f5c542'},
+  grid:{vertLines:{color:'#292010'},horzLines:{color:'#292010'}}, 
+  timeScale:{timeVisible:true,secondsVisible:false},
+  rightPriceScale:{borderColor:'#26364c'}
+});
+const candles=chart.addCandlestickSeries({
+  upColor:'#22c55e',downColor:'#ef4444',
+  borderUpColor:'#22c55e',borderDownColor:'#ef4444',
+  wickUpColor:'#22c55e',wickDownColor:'#ef4444'
+});
+
+const ema20=chart.addLineSeries({color:'#f5c542',lineWidth:2});
+const ema50=chart.addLineSeries({color:'#38bdf8',lineWidth:2});
+
+function show(id,value){
+ document.getElementById(id).textContent=
+ value===null||value===undefined?'--':value;
+}
+
+async function loadData(){
+ try{
+  show('signal','Loading...');
+  const interval=document.getElementById('timeframe').value;
+  const response=await fetch('/api/analysis?interval='+interval);
+  const data=await response.json();
+  if(!response.ok)throw new Error(data.error||'Market data unavailable');
+
+  show('price',Number(data.price).toFixed(3));
+  show('updated','Last candle: '+data.updated);
+  show('signal',data.signal);
+  show('reason',data.reason);
+  show('trend',data.trend);
+  show('score',data.setup_score+'/100');
+  show('rsi',data.rsi);
+  show('atr',data.atr);
+  show('entry',data.entry);
+  show('sl',data.stop_loss);
+  show('tp',data.take_profit);
+  show('support',data.support);
+  show('resistance',data.resistance);
+  show('news',data.news_warning);
+
+  const formatted=data.candles.map(c=>({
+   time:Math.floor(new Date(c.datetime.replace(' ','T')+'Z').getTime()/1000),
+   open:c.open,high:c.high,low:c.low,close:c.close
+  }));
+  candles.setData(formatted);if (data.signal === 'BUY') {
+  candles.setMarkers([{
+    time: formatted[formatted.length - 1].time,
+    position: 'belowBar',
+    color: '#22c55e',
+    shape: 'arrowUp',
+    text: 'BUY'
+  }]);
+} else if (data.signal === 'SELL') {
+  candles.setMarkers([{
+    time: formatted[formatted.length - 1].time,
+    position: 'aboveBar',
+    color: '#ef4444',
+    shape: 'arrowDown',
+    text: 'SELL'
+  }]);
+} else {
+  candles.setMarkers([]);
+}
+  function calculateEMA(values,period){
+   let result=[];
+   let previous=values.slice(0,period).reduce((a,b)=>a+b,0)/period;
+   const multiplier=2/(period+1);
+   result.push({time:formatted[period-1].time,value:previous});
+   for(let i=period;i<values.length;i++){
+    previous=(values[i]-previous)*multiplier+previous;
+    result.push({time:formatted[i].time,value:previous});
+   }
+   return result;
+  }
+  const closes=formatted.map(c=>c.close);
+  ema20.setData(calculateEMA(closes,20));
+  ema50.setData(calculateEMA(closes,50));
+  chart.timeScale().fitContent();
+ }catch(error){
+  show('signal','ERROR');
+  show('reason',error.message);
+ }
+}
+
+window.addEventListener('resize',()=>{
+ chart.applyOptions({width:chartElement.clientWidth});
+});
+loadData();
+setInterval(loadData,60000);
+</script>
+</body>
+</html>
