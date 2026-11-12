@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOLD EDGE AI | XAUUSD Trading Intelligence</title>
-<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js">
+
+</script>
 <style>
 body{margin:0;background:#0b1220;color:#e8edf7;font-family:Arial,sans-serif;padding:15px}
 header{display:flex;justify-content:space-between;align-items:center}
@@ -78,7 +80,18 @@ button, select {
 
 </style>
 </head>
+
 <body>
+
+<div class="card" style="margin:15px 0;">
+  <div class="muted">GLOBAL TRADING SESSIONS — KENYA TIME</div>
+  <div id="sessionChecked" class="muted">Checking sessions...</div>
+  <div id="sessionGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-top:12px;">
+    <div class="muted">Loading session clock...</div>
+  </div>
+  <div id="nextSession" style="margin-top:12px;font-weight:bold;">Calculating next session...</div>
+</div>
+
 <header>
 <h1>GOLD EDGE AI</h1>
 <span class="muted">XAU/USD ANALYZER</span>
@@ -99,6 +112,72 @@ button, select {
 <option value="1h">H1</option>
 </select>
 <div id="chart"></div>
+</div>
+
+<div class="card">
+<div class="muted">MULTI-TIMEFRAME ANALYSIS</div>
+<div class="value" id="mtfOverall">Loading...</div>
+<div id="mtfGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-top:14px"></div>
+<div class="muted" id="mtfChecked" style="margin-top:12px"></div>
+</div>
+
+<div class="card">
+<div class="muted">AI TREND REVERSAL DETECTOR</div>
+<div class="value" id="reversalSignal">Loading...</div>
+<div class="muted" id="reversalScore">Evidence score: --</div>
+<div id="reversalReasons" style="margin-top:10px"></div>
+<div class="muted" id="reversalWarning" style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+<div class="muted">ICT SMART MONEY ANALYSIS</div>
+<div class="value" id="ictBias">Loading...</div>
+<div class="muted" id="ictStructure" style="margin-top:8px">Market structure: --</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px">
+ <div>
+  <div class="muted">SWING HIGH</div>
+  <strong id="ictSwingHigh">--</strong>
+ </div>
+ <div>
+  <div class="muted">SWING LOW</div>
+  <strong id="ictSwingLow">--</strong>
+ </div>
+</div>
+<div class="muted" style="margin-top:16px">OPEN FAIR VALUE GAPS</div>
+<div style="display:flex;justify-content:space-between;margin-top:8px">
+ <span>Bullish FVGs</span><strong id="ictBullishFVG">--</strong>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:8px">
+ <span>Bearish FVGs</span><strong id="ictBearishFVG">--</strong>
+</div>
+<div class="muted" style="margin-top:16px">LATEST FAIR VALUE GAP</div>
+<div id="ictLatestFVG" style="margin-top:8px">Loading...</div>
+<div class="muted" id="ictWarning" style="margin-top:12px;font-size:12px"></div>
+</div>
+
+<div class="card">
+<div class="muted">BULLISH / BEARISH STRENGTH</div>
+<div style="display:flex;justify-content:space-between;margin-top:14px">
+<span style="color:#16a34a;font-weight:bold">BULLISH</span>
+<strong id="bullishStrength">--/100</strong>
+</div>
+<div style="height:12px;background:#333;border-radius:20px;overflow:hidden;margin-top:7px">
+<div id="bullishBar" style="height:100%;width:0%;background:#16a34a"></div>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:16px">
+<span style="color:#ef4444;font-weight:bold">BEARISH</span>
+<strong id="bearishStrength">--/100</strong>
+</div>
+<div style="height:12px;background:#333;border-radius:20px;overflow:hidden;margin-top:7px">
+<div id="bearishBar" style="height:100%;width:0%;background:#ef4444"></div>
+</div>
+<div style="margin-top:16px">
+Market pressure: <strong id="marketPressure">Loading...</strong>
+</div>
+<div class="muted" id="strengthDifference" style="margin-top:7px"></div>
+<div class="muted" style="margin-top:10px;font-size:12px">
+Technical evidence scores, not probabilities or guaranteed predictions.
+</div>
 </div>
 
 <div class="card">
@@ -155,6 +234,51 @@ button, select {
 </div>
 
 <script>
+async function loadSessions() {
+  const grid = document.getElementById("sessionGrid");
+  const next = document.getElementById("nextSession");
+
+  try {
+    const response = await fetch("/api/sessions");
+    if (!response.ok) throw new Error("Session API unavailable");
+
+    const data = await response.json();
+
+    grid.innerHTML = (data.sessions || []).map(session => {
+      const open = session.status === "OPEN";
+      return `
+        <div style="background:#171717;border:1px solid #444;border-radius:10px;padding:12px;">
+          <div style="font-weight:bold;">${session.name}</div>
+          <div style="color:${open ? '#35d07f' : '#aaa'};font-weight:bold;margin:7px 0;">
+            ${session.status}
+          </div>
+          <div class="muted">Opens: ${session.open_time_eat || "--"}</div>
+          <div class="muted">Closes: ${session.close_time_eat || "--"}</div>
+        </div>
+      `;
+    }).join("");
+
+    document.getElementById("sessionChecked").textContent =
+      "Kenya time: " + data.checked_at_eat;
+
+    if (data.next_session) {
+      next.textContent =
+        "NEXT: " + data.next_session.name +
+        " opens at " + data.next_session.opens_at_eat +
+        " (in " + data.next_session.countdown + ")";
+    } else {
+      next.textContent = "Next session unavailable.";
+    }
+
+  } catch (error) {
+    grid.innerHTML = '<div class="muted">Session clock unavailable. Please refresh.</div>';
+    next.textContent = "";
+  }
+}
+
+loadSessions();
+setInterval(loadSessions, 60000);
+
 const chartElement=document.getElementById('chart');
 const chart=LightweightCharts.createChart(chartElement,{
   width:chartElement.clientWidth,
@@ -269,6 +393,149 @@ async function loadNews(){
  }
 }
 
+async function loadMultiTimeframe(){
+ try {
+  const response = await fetch('/api/multi-timeframe');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Analysis unavailable');
+
+  show('mtfOverall', data.overall_trend || 'UNKNOWN');
+
+  const grid = document.getElementById('mtfGrid');
+  grid.replaceChildren();
+
+  (data.results || []).forEach(item => {
+   const card = document.createElement('div');
+   card.style.cssText = 'background:#171717;border:1px solid #333;border-radius:10px;padding:12px;text-align:center';
+
+   const name = document.createElement('div');
+   name.style.cssText = 'color:#aaa;font-size:12px;margin-bottom:7px';
+   name.textContent = item.timeframe || '--';
+
+   const trend = document.createElement('div');
+   trend.style.cssText = 'font-weight:bold;color:' +
+    (item.trend === 'BULLISH' ? '#22c55e' :
+     item.trend === 'BEARISH' ? '#ef4444' : '#facc15');
+   trend.textContent = item.trend || 'UNKNOWN';
+
+   const rsi = document.createElement('div');
+   rsi.style.cssText = 'color:#aaa;font-size:11px;margin-top:6px';
+   rsi.textContent = 'RSI: ' + (item.rsi ?? '--');
+
+   card.append(name, trend, rsi);
+   grid.appendChild(card);
+  });
+
+  show('mtfChecked', 'Last checked: ' + (data.checked_at || '--'));
+ } catch(error) {
+  show('mtfOverall', 'UNAVAILABLE');
+  show('mtfChecked', error.message);
+ }
+}
+
+async function loadReversal(){
+ try {
+  const response = await fetch('/api/analysis?interval=15min');
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Analysis unavailable');
+
+  const r = data.reversal || {};
+  const signal = r.signal || 'NO DATA';
+
+  const signalElement = document.getElementById('reversalSignal');
+  signalElement.textContent = signal;
+  signalElement.style.color =
+   signal === 'BULLISH REVERSAL' ? '#22c55e' :
+   signal === 'BEARISH REVERSAL' ? '#ef4444' : '#facc15';
+
+  show('reversalScore',
+   'Evidence score: ' + (r.score ?? '--') +
+   '/100 | RSI: ' + (r.rsi ?? '--'));
+
+  const reasons = document.getElementById('reversalReasons');
+  reasons.replaceChildren();
+
+  (r.reasons || []).forEach(reason => {
+   const line = document.createElement('div');
+   line.className = 'muted';
+   line.textContent = '• ' + reason;
+   line.style.marginTop = '6px';
+   reasons.appendChild(line);
+  });
+
+  show('reversalWarning', r.warning || '');
+ } catch(error) {
+  show('reversalSignal', 'UNAVAILABLE');
+  show('reversalWarning', error.message);
+ }
+}
+
+function renderICT(data){
+    const ict = data.ict;
+    if (!ict) {
+        document.getElementById("ictBias").textContent = "UNAVAILABLE";
+        return;
+    }
+
+    const structure = ict.structure || {};
+    const gaps = ict.fair_value_gaps || [];
+    const openGaps = gaps.filter(g => g.status === "OPEN");
+
+    const bullish = openGaps.filter(g => g.type === "BULLISH FVG").length;
+    const bearish = openGaps.filter(g => g.type === "BEARISH FVG").length;
+
+    const bias = document.getElementById("ictBias");
+    bias.textContent = structure.bias || "NEUTRAL";
+    bias.style.color =
+        structure.bias === "BULLISH" ? "#22c55e" :
+        structure.bias === "BEARISH" ? "#ef4444" : "#facc15";
+
+    document.getElementById("ictStructure").textContent =
+        "BOS: " + (structure.bos || "None detected") +
+        " | CHoCH: " + (structure.choch || "Not implemented yet");
+
+    const formatPrice = value =>
+        Number.isFinite(Number(value)) ? Number(value).toFixed(3) : "--";
+
+    document.getElementById("ictSwingHigh").textContent =
+        formatPrice(structure.latest_swing_high);
+
+    document.getElementById("ictSwingLow").textContent =
+        formatPrice(structure.latest_swing_low);
+
+    document.getElementById("ictBullishFVG").textContent = bullish;
+    document.getElementById("ictBearishFVG").textContent = bearish;
+
+    const latest = ict.latest_fvg;
+    document.getElementById("ictLatestFVG").textContent = latest
+        ? latest.type + " | " + formatPrice(latest.low) +
+          " - " + formatPrice(latest.high) +
+          " | " + latest.status
+        : "No Fair Value Gap detected";
+
+    document.getElementById("ictWarning").textContent =
+        ict.warning || "ICT results are technical evidence, not guaranteed predictions.";
+}
+
+function renderStrength(data){
+    const strength = data.strength;
+    if (!strength) return;
+
+    document.getElementById("bullishStrength").textContent = strength.bullish + "/100";
+    document.getElementById("bearishStrength").textContent = strength.bearish + "/100";
+    document.getElementById("bullishBar").style.width = strength.bullish + "%";
+    document.getElementById("bearishBar").style.width = strength.bearish + "%";
+
+    const pressure = document.getElementById("marketPressure");
+    pressure.textContent = strength.pressure;
+    pressure.style.color =
+        strength.pressure === "BULLISH" ? "#16a34a" :
+        strength.pressure === "BEARISH" ? "#ef4444" : "#d4a017";
+
+    document.getElementById("strengthDifference").textContent =
+        "Strength difference: " + strength.difference + " points";
+}
+
 async function loadData(){
  try{
   show('signal','Loading...');
@@ -276,6 +543,9 @@ async function loadData(){
   const response=await fetch('/api/analysis?interval='+interval);
   const data=await response.json();
   if(!response.ok)throw new Error(data.error||'Market data unavailable');
+
+  renderStrength(data);
+  renderICT(data);
 
   show('price',Number(data.price).toFixed(3));
   show('updated','Last candle: '+data.updated);
@@ -340,7 +610,11 @@ window.addEventListener('resize',()=>{
 });
 loadData();
 loadNews();
+loadMultiTimeframe();
+loadReversal();
 setInterval(loadData,60000);
+setInterval(loadMultiTimeframe,60000);
+setInterval(loadReversal,60000);
 setInterval(loadNews,60000);
 </script>
 </body>
