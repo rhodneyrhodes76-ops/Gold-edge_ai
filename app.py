@@ -21,57 +21,76 @@ news_cache = {"time": 0, "events": None}
 EAT = timezone(timedelta(hours=3))
 NEW_YORK = timezone(timedelta(hours=-5))
 
+
 def get_economic_news():
     now = datetime.now(timezone.utc)
+    current_time = time.time()
 
-    if news_cache["events"] is not None and time.time() - news_cache["time"] < NEWS_CACHE_SECONDS:
+    # Use fresh cached events when available.
+    if (
+        news_cache["events"] is not None
+        and current_time - news_cache["time"] < NEWS_CACHE_SECONDS
+    ):
         events = news_cache["events"]
+        stale = False
     else:
-        response = requests.get(
-            NEWS_URL,
-            headers={"User-Agent": "GOLD-AI-TRADER/1.0"},
-            timeout=15
-        )
-        response.raise_for_status()
-        data = response.json()
+        try:
+            response = requests.get(
+                NEWS_URL,
+                headers={"User-Agent": "GOLD-AI-TRADER/1.0"},
+                timeout=15
+            )
+            response.raise_for_status()
+            data = response.json()
 
-        if not isinstance(data, list):
-            raise ValueError("Invalid economic calendar response.")
+            if not isinstance(data, list):
+                raise ValueError("Invalid economic calendar response.")
 
-        events = []
+            events = []
 
-        for item in data:
-            if item.get("country") != "USD":
-                continue
+            for item in data:
+                if item.get("country") != "USD":
+                    continue
 
-            impact = str(item.get("impact", "")).title()
-            if impact not in ("High", "Medium", "Low"):
-                continue
+                impact = str(item.get("impact", "")).title()
+                if impact not in ("High", "Medium", "Low"):
+                    continue
 
-            try:
-                event_time = datetime.fromisoformat(
-                    str(item["date"]).replace("Z", "+00:00")
-                )
+                try:
+                    event_time = datetime.fromisoformat(
+                        str(item["date"]).replace("Z", "+00:00")
+                    )
 
-                if event_time.tzinfo is None:
-                    event_time = event_time.replace(tzinfo=NEW_YORK)
+                    if event_time.tzinfo is None:
+                        event_time = event_time.replace(tzinfo=NEW_YORK)
 
-                event_time = event_time.astimezone(timezone.utc)
+                    event_time = event_time.astimezone(timezone.utc)
 
-                events.append({
-                    "event": str(item.get("title", "USD event")),
-                    "currency": "USD",
-                    "impact": impact,
-                    "time_utc": event_time.isoformat(),
-                    "time_eat": event_time.astimezone(EAT).strftime("%Y-%m-%d %H:%M"),
-                    "forecast": item.get("forecast", ""),
-                    "previous": item.get("previous", "")
-                })
-            except (ValueError, TypeError, KeyError):
-                continue
+                    events.append({
+                        "event": str(item.get("title", "USD event")),
+                        "currency": "USD",
+                        "impact": impact,
+                        "time_utc": event_time.isoformat(),
+                        "time_eat": event_time.astimezone(EAT).strftime("%Y-%m-%d %H:%M"),
+                        "forecast": item.get("forecast", ""),
+                        "previous": item.get("previous", "")
+                    })
+                except (ValueError, TypeError, KeyError):
+                    continue
 
-        news_cache["time"] = time.time()
-        news_cache["events"] = events
+            # Save only successfully downloaded calendar data.
+            news_cache["time"] = current_time
+            news_cache["events"] = events
+            stale = False
+
+        except Exception as error:
+            # Reuse old events instead of losing the calendar.
+            if news_cache["events"] is None:
+                raise
+
+            events = news_cache["events"]
+            stale = True
+            print("NEWS FEED WARNING:", error)
 
     upcoming = []
     blocked = None
@@ -89,12 +108,12 @@ def get_economic_news():
     upcoming.sort(key=lambda e: e["time_utc"])
 
     return {
-        "status": "CONNECTED",
+        "status": "STALE" if stale else "CONNECTED",
         "events": upcoming[:20],
         "blocked": blocked,
+        "warning": "Using cached calendar data. Verify event times independently." if stale else None,
         "checked_at": now.astimezone(EAT).strftime("%Y-%m-%d %H:%M:%S")
     }
-
 def ema(values, period):
     if len(values) < period:
         return None

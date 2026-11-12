@@ -187,24 +187,27 @@ function renderNews(data) {
 
  eventsBox.replaceChildren();
 
- if (data.news_status !== 'CONNECTED') {
-   warning.textContent = 'CALENDAR DISCONNECTED — Trading signals paused.';
+ if (!['CONNECTED', 'STALE'].includes(data.news_status)) {   warning.textContent = 'CALENDAR DISCONNECTED — Trading signals paused.';
    warning.style.color = '#ef4444';
    status.textContent = 'Connection unavailable. Do not rely on trading signals.';
    status.style.color = '#ef4444';
    return;
  }
 
- if (data.news_blocked) {
+ if (data.news_status === 'STALE') {
+   warning.textContent = data.news_warning || 'STALE CALENDAR — Verify event times.';
+   warning.style.color = '#f59e0b';
+} else if (data.news_blocked) {
    warning.textContent = 'HIGH IMPACT NEWS: ' + data.news_warning;
    warning.style.color = '#ef4444';
- } else {
+} else {
    warning.textContent = data.news_warning;
    warning.style.color = '#22c55e';
- }
-
- status.textContent = '● LIVE CALENDAR CONNECTED';
- status.style.color = '#22c55e';
+}
+ status.textContent = data.news_status === 'STALE'
+ ? '⚠ STALE CALENDAR — VERIFY EVENT TIMES'
+ : '● LIVE CALENDAR CONNECTED';
+status.style.color = data.news_status === 'STALE' ? '#f59e0b' : '#22c55e';
 
  const events = data.news_events || [];
 
@@ -256,9 +259,9 @@ async function loadNews(){
    news_status: d.status,
    news_events: d.events,
    news_blocked: !!d.blocked,
-   news_warning: d.blocked
+   news_warning: d.warning || (d.blocked
     ? (d.blocked.event || d.blocked.name || 'High-impact USD event')
-    : 'No active high-impact news block.',
+    : 'No active high-impact news block.'),
    news_checked_at: d.checked_at
   });
  } catch(error) {
