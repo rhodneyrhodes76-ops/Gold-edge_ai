@@ -92,11 +92,15 @@ button, select {
   <div id="nextSession" style="margin-top:12px;font-weight:bold;">Calculating next session...</div>
 </div>
 
-<header>
-<h1>GOLD EDGE AI</h1>
+<header style="display:flex;align-items:center;gap:15px;">
+<img src="{{ url_for('static', filename='gold_edge_ai_app_icon.png') }}"
+     alt="GOLD EDGE AI Logo"
+     style="width:65px;height:65px;object-fit:contain;border-radius:12px;">
+<div>
+<h1 style="margin:0;">GOLD EDGE AI</h1>
 <span class="muted">XAU/USD ANALYZER</span>
+</div>
 </header>
-
 <div class="card">
 <div class="muted">CURRENT GOLD PRICE</div>
 <div class="price" id="price">Loading...</div>
