@@ -1,5 +1,6 @@
 
 import os
+import json
 import time
 import requests
 from datetime import datetime, timezone, timedelta
@@ -13,56 +14,74 @@ SYMBOL = "XAU/USD"
 
 cache = {}
 CACHE_SECONDS = 60
+NEWS_URL = "https://showmytrades.com/api/public/calendar/v1"
+NEWS_CACHE_SECONDS = 3600
+NEWS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "news_cache.json")
 
-
-NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-NEWS_CACHE_SECONDS = 900
 news_cache = {"time": 0, "events": None}
 EAT = timezone(timedelta(hours=3))
-NEW_YORK = timezone(timedelta(hours=-5))
+
+# Restore previously saved calendar data when available.
+try:
+    with open(NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
+        saved = json.load(f)
+        if isinstance(saved, dict) and isinstance(saved.get("events"), list):
+            news_cache["time"] = float(saved.get("time", 0))
+            news_cache["events"] = saved["events"]
+except (OSError, ValueError, TypeError):
+    pass
 
 
 def get_economic_news():
     now = datetime.now(timezone.utc)
     current_time = time.time()
+    stale = False
 
-    # Use fresh cached events when available.
     if (
         news_cache["events"] is not None
         and current_time - news_cache["time"] < NEWS_CACHE_SECONDS
     ):
         events = news_cache["events"]
-        stale = False
+
     else:
         try:
             response = requests.get(
                 NEWS_URL,
-                headers={"User-Agent": "GOLD-AI-TRADER/1.0"},
-                timeout=15
+                params={
+                    "currency": "USD",
+                    "impact": "high,medium,low",
+                    "days": 7
+                },
+                headers={"User-Agent": "GOLD-EDGE-AI/1.0"},
+                timeout=20
             )
             response.raise_for_status()
             data = response.json()
 
-            if not isinstance(data, list):
+            if not isinstance(data, dict) or not isinstance(data.get("events"), list):
                 raise ValueError("Invalid economic calendar response.")
 
             events = []
 
-            for item in data:
-                if item.get("country") != "USD":
+            for item in data["events"]:
+                if not isinstance(item, dict):
+                    continue
+
+                if str(item.get("currency", "")).upper() != "USD":
                     continue
 
                 impact = str(item.get("impact", "")).title()
+
                 if impact not in ("High", "Medium", "Low"):
                     continue
 
                 try:
                     event_time = datetime.fromisoformat(
-                        str(item["date"]).replace("Z", "+00:00")
+                        str(item["time"]).replace("Z", "+00:00")
                     )
 
                     if event_time.tzinfo is None:
-                        event_time = event_time.replace(tzinfo=NEW_YORK)
+                        event_time = event_time.replace(tzinfo=timezone.utc)
 
                     event_time = event_time.astimezone(timezone.utc)
 
@@ -73,24 +92,37 @@ def get_economic_news():
                         "time_utc": event_time.isoformat(),
                         "time_eat": event_time.astimezone(EAT).strftime("%Y-%m-%d %H:%M"),
                         "forecast": item.get("forecast", ""),
-                        "previous": item.get("previous", "")
+                        "previous": item.get("previous", ""),
+                        "actual": item.get("actual", "")
                     })
+
                 except (ValueError, TypeError, KeyError):
                     continue
 
-            # Save only successfully downloaded calendar data.
+            if not events:
+                raise ValueError("Calendar returned no valid USD events.")
+
+            # Save successfully downloaded events for future fallback.
             news_cache["time"] = current_time
             news_cache["events"] = events
-            stale = False
+
+            try:
+                with open(NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump({
+                        "time": current_time,
+                        "events": events
+                    }, f)
+            except OSError as cache_error:
+                print("NEWS CACHE SAVE WARNING:", cache_error)
 
         except Exception as error:
-            # Reuse old events instead of losing the calendar.
+            print("NEWS FEED WARNING:", error)
+
             if news_cache["events"] is None:
                 raise
 
             events = news_cache["events"]
             stale = True
-            print("NEWS FEED WARNING:", error)
 
     upcoming = []
     blocked = None
@@ -114,6 +146,8 @@ def get_economic_news():
         "warning": "Using cached calendar data. Verify event times independently." if stale else None,
         "checked_at": now.astimezone(EAT).strftime("%Y-%m-%d %H:%M:%S")
     }
+
+
 def ema(values, period):
     if len(values) < period:
         return None
