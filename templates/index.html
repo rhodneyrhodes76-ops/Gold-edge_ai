@@ -52,6 +52,7 @@ button, select {
   background: #d4a514;
   color: #080808;
   font-weight: bold;
+}
 
 .green {
   color: #22c55e;
@@ -60,6 +61,21 @@ button, select {
 .red {
   color: #ef4444;
 }
+
+.news-event {
+  border: 1px solid #383838;
+  border-radius: 9px;
+  padding: 11px;
+  margin: 9px 0;
+  background: #101010;
+}
+.news-high {border-left: 4px solid #ef4444;}
+.news-medium {border-left: 4px solid #f59e0b;}
+.news-low {border-left: 4px solid #22c55e;}
+.news-impact {font-weight: bold;font-size: 12px;}
+.news-time {color: #f5c542;font-size: 13px;margin-top: 5px;}
+.news-title {font-weight: bold;margin-top: 5px;}
+
 </style>
 </head>
 <body>
@@ -130,9 +146,12 @@ button, select {
 </div>
 </div>
 
-<div class="card">
-<h3>Economic News Warning</h3>
-<p id="news" class="muted">Loading...</p>
+<div class="card" id="newsCard">
+<h3 class="gold">ECONOMIC NEWS CENTER</h3>
+<p id="news" class="muted">Connecting to calendar...</p>
+<div id="newsStatus" class="muted">Checking connection...</div>
+<div id="newsEvents"></div>
+<div id="newsChecked" class="muted"></div>
 </div>
 
 <script>
@@ -159,6 +178,94 @@ function show(id,value){
  value===null||value===undefined?'--':value;
 }
 
+
+function renderNews(data) {
+ const status = document.getElementById('newsStatus');
+ const warning = document.getElementById('news');
+ const eventsBox = document.getElementById('newsEvents');
+ const checked = document.getElementById('newsChecked');
+
+ eventsBox.replaceChildren();
+
+ if (data.news_status !== 'CONNECTED') {
+   warning.textContent = 'CALENDAR DISCONNECTED — Trading signals paused.';
+   warning.style.color = '#ef4444';
+   status.textContent = 'Connection unavailable. Do not rely on trading signals.';
+   status.style.color = '#ef4444';
+   return;
+ }
+
+ if (data.news_blocked) {
+   warning.textContent = 'HIGH IMPACT NEWS: ' + data.news_warning;
+   warning.style.color = '#ef4444';
+ } else {
+   warning.textContent = data.news_warning;
+   warning.style.color = '#22c55e';
+ }
+
+ status.textContent = '● LIVE CALENDAR CONNECTED';
+ status.style.color = '#22c55e';
+
+ const events = data.news_events || [];
+
+ if (!events.length) {
+   const empty = document.createElement('p');
+   empty.textContent = 'No upcoming USD events in the display window.';
+   empty.className = 'muted';
+   eventsBox.appendChild(empty);
+ }
+
+ events.forEach(event => {
+   const card = document.createElement('div');
+   card.className = 'news-event news-' + event.impact.toLowerCase();
+
+   const impact = document.createElement('div');
+   impact.className = 'news-impact';
+   impact.textContent = event.impact.toUpperCase() + ' IMPACT';
+
+   const title = document.createElement('div');
+   title.className = 'news-title';
+   title.textContent = event.event;
+
+   const time = document.createElement('div');
+   time.className = 'news-time';
+   time.textContent = 'Nairobi: ' + event.time_eat;
+
+   const details = document.createElement('div');
+   details.className = 'muted';
+   details.textContent =
+     'Forecast: ' + (event.forecast || '--') +
+     ' | Previous: ' + (event.previous || '--');
+
+   card.append(impact, title, time, details);
+   eventsBox.appendChild(card);
+ });
+
+ checked.textContent = 'Last checked (EAT): ' +
+   (data.news_checked_at || '--');
+}
+
+
+async function loadNews(){
+ try {
+  const response = await fetch('/api/news');
+  if (!response.ok) throw new Error('Calendar request failed');
+  const d = await response.json();
+
+  renderNews({
+   news_status: d.status,
+   news_events: d.events,
+   news_blocked: !!d.blocked,
+   news_warning: d.blocked
+    ? (d.blocked.event || d.blocked.name || 'High-impact USD event')
+    : 'No active high-impact news block.',
+   news_checked_at: d.checked_at
+  });
+ } catch(error) {
+  renderNews({news_status:'DISCONNECTED'});
+ }
+}
+
 async function loadData(){
  try{
   show('signal','Loading...');
@@ -180,7 +287,6 @@ async function loadData(){
   show('tp',data.take_profit);
   show('support',data.support);
   show('resistance',data.resistance);
-  show('news',data.news_warning);
 
   const formatted=data.candles.map(c=>({
    time:Math.floor(new Date(c.datetime.replace(' ','T')+'Z').getTime()/1000),
@@ -230,7 +336,9 @@ window.addEventListener('resize',()=>{
  chart.applyOptions({width:chartElement.clientWidth});
 });
 loadData();
+loadNews();
 setInterval(loadData,60000);
+setInterval(loadNews,60000);
 </script>
 </body>
 </html>

@@ -2,6 +2,8 @@
 import os
 import time
 import requests
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from flask import Flask, render_template, jsonify, request
 
 app = Flask(__name__)
@@ -11,6 +13,87 @@ SYMBOL = "XAU/USD"
 
 cache = {}
 CACHE_SECONDS = 60
+
+
+NEWS_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+NEWS_CACHE_SECONDS = 900
+news_cache = {"time": 0, "events": None}
+EAT = timezone(timedelta(hours=3))
+NEW_YORK = timezone(timedelta(hours=-5))
+
+def get_economic_news():
+    now = datetime.now(timezone.utc)
+
+    if news_cache["events"] is not None and time.time() - news_cache["time"] < NEWS_CACHE_SECONDS:
+        events = news_cache["events"]
+    else:
+        response = requests.get(
+            NEWS_URL,
+            headers={"User-Agent": "GOLD-AI-TRADER/1.0"},
+            timeout=15
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        if not isinstance(data, list):
+            raise ValueError("Invalid economic calendar response.")
+
+        events = []
+
+        for item in data:
+            if item.get("country") != "USD":
+                continue
+
+            impact = str(item.get("impact", "")).title()
+            if impact not in ("High", "Medium", "Low"):
+                continue
+
+            try:
+                event_time = datetime.fromisoformat(
+                    str(item["date"]).replace("Z", "+00:00")
+                )
+
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=NEW_YORK)
+
+                event_time = event_time.astimezone(timezone.utc)
+
+                events.append({
+                    "event": str(item.get("title", "USD event")),
+                    "currency": "USD",
+                    "impact": impact,
+                    "time_utc": event_time.isoformat(),
+                    "time_eat": event_time.astimezone(EAT).strftime("%Y-%m-%d %H:%M"),
+                    "forecast": item.get("forecast", ""),
+                    "previous": item.get("previous", "")
+                })
+            except (ValueError, TypeError, KeyError):
+                continue
+
+        news_cache["time"] = time.time()
+        news_cache["events"] = events
+
+    upcoming = []
+    blocked = None
+
+    for event in events:
+        event_time = datetime.fromisoformat(event["time_utc"])
+        minutes = (event_time - now).total_seconds() / 60
+
+        if -60 <= minutes <= 7 * 24 * 60:
+            upcoming.append(event)
+
+        if event["impact"] == "High" and -15 <= minutes <= 30:
+            blocked = event
+
+    upcoming.sort(key=lambda e: e["time_utc"])
+
+    return {
+        "status": "CONNECTED",
+        "events": upcoming[:20],
+        "blocked": blocked,
+        "checked_at": now.astimezone(EAT).strftime("%Y-%m-%d %H:%M:%S")
+    }
 
 def ema(values, period):
     if len(values) < period:
@@ -156,6 +239,41 @@ def analyze(candles):
         stop_loss = price + 1.5 * atr
         take_profit = price - 3 * atr
 
+    news_error = None
+    try:
+        news = get_economic_news()
+    except Exception as error:
+        news = {
+            "status": "DISCONNECTED",
+            "events": [],
+            "blocked": None
+        }
+        news_error = str(error)
+
+    news_blocked = news["blocked"] is not None
+
+    # Fail safely: do not issue a trade signal without a working calendar.
+    if news["status"] != "CONNECTED":
+        signal = "WAIT"
+        reason = "Economic calendar unavailable. Trading signals paused."
+        stop_loss = None
+        take_profit = None
+        setup_score = 0
+
+    elif news_blocked:
+        signal = "WAIT"
+        reason = "High-impact USD news window. New trades paused."
+        stop_loss = None
+        take_profit = None
+
+    news_warning = (
+        "HIGH IMPACT USD NEWS: " + news["blocked"]["event"]
+        if news_blocked
+        else "Calendar disconnected: " + str(news_error)
+        if news_error
+        else "Economic calendar connected. No active high-impact USD news window."
+    )
+
     return {
         "symbol": SYMBOL,
         "price": round(price, 3),
@@ -172,7 +290,11 @@ def analyze(candles):
         "entry": round(price, 3) if signal != "WAIT" else None,
         "stop_loss": round(stop_loss, 3) if stop_loss is not None else None,
         "take_profit": round(take_profit, 3) if take_profit is not None else None,
-        "news_warning": "Live economic calendar is not connected. Check high-impact news manually.",
+        "news_warning": news_warning,
+        "news_status": news["status"],
+        "news_blocked": news_blocked,
+        "news_events": news["events"],
+        "news_checked_at": news.get("checked_at"),
         "candles": candles,
         "updated": candles[-1]["datetime"]
     }
@@ -250,6 +372,18 @@ def api_analysis():
 
     except Exception as error:
         return jsonify({"error": str(error)}), 503
+
+
+@app.route("/api/news")
+def api_news():
+    try:
+        return jsonify(get_economic_news())
+    except Exception as error:
+        return jsonify({
+            "status": "DISCONNECTED",
+            "error": str(error),
+            "events": []
+        }), 503
 @app.route("/risk")
 def risk_page():
     return render_template("risk.html")
