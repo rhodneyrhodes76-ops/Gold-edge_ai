@@ -538,6 +538,111 @@ def detect_ict_fvg(candles):
 
     return gaps[-20:]
 
+def detect_ict_order_blocks(candles, lookback=5):
+    """
+    Detect order blocks from confirmed BOS/CHoCH events
+    with displacement. Uses OHLC candle data only.
+    """
+    blocks = []
+
+    for i in range(11, len(candles)):
+        history = candles[:i + 1]
+
+        try:
+            structure = detect_ict_structure(history)
+        except ValueError:
+            continue
+
+        event = structure.get("bos") or structure.get("choch")
+
+        if not event:
+            continue
+
+        bullish = event.startswith("BULLISH")
+        bearish = event.startswith("BEARISH")
+
+        if not bullish and not bearish:
+            continue
+
+        impulse = candles[i]
+        body = abs(impulse["close"] - impulse["open"])
+
+        previous_bodies = [
+            abs(c["close"] - c["open"])
+            for c in candles[max(0, i - 20):i]
+        ]
+
+        if not previous_bodies:
+            continue
+
+        average_body = sum(previous_bodies) / len(previous_bodies)
+        candle_range = impulse["high"] - impulse["low"]
+
+        if average_body <= 0 or candle_range <= 0:
+            continue
+
+        displacement = (
+            body >= average_body * 1.5
+            and (
+                (bullish and impulse["close"] > impulse["open"]
+                 and (impulse["high"] - impulse["close"]) / candle_range <= 0.25)
+                or
+                (bearish and impulse["close"] < impulse["open"]
+                 and (impulse["close"] - impulse["low"]) / candle_range <= 0.25)
+            )
+        )
+
+        if not displacement:
+            continue
+
+        origin = None
+
+        for j in range(i - 1, max(-1, i - lookback - 1), -1):
+            candle = candles[j]
+
+            if bullish and candle["close"] < candle["open"]:
+                origin = (j, candle)
+                break
+
+            if bearish and candle["close"] > candle["open"]:
+                origin = (j, candle)
+                break
+
+        if origin is None:
+            continue
+
+        origin_index, ob = origin
+        zone_low = ob["low"]
+        zone_high = ob["high"]
+
+        status = "FRESH"
+
+        for later in candles[i + 1:]:
+            if bullish and later["close"] < zone_low:
+                status = "BROKEN"
+                break
+
+            if bearish and later["close"] > zone_high:
+                status = "BROKEN"
+                break
+
+            if later["low"] <= zone_high and later["high"] >= zone_low:
+                status = "MITIGATED"
+
+        blocks.append({
+            "type": "BULLISH ORDER BLOCK" if bullish else "BEARISH ORDER BLOCK",
+            "status": status,
+            "high": round(zone_high, 3),
+            "low": round(zone_low, 3),
+            "midpoint": round((zone_high + zone_low) / 2, 3),
+            "datetime": ob["datetime"],
+            "confirmation": event,
+            "confirmation_datetime": impulse["datetime"]
+        })
+
+    return blocks[-10:]
+
+
 def detect_ict_liquidity(candles, structure):
     if not candles or not structure:
         return []
@@ -575,6 +680,7 @@ def analyze_ict(candles):
     structure = detect_ict_structure(candles)
     gaps = detect_ict_fvg(candles)
     sweeps = detect_ict_liquidity(candles, structure)
+    order_blocks = detect_ict_order_blocks(candles)
 
     return {
         "structure": structure,
@@ -582,6 +688,8 @@ def analyze_ict(candles):
         "latest_fvg": gaps[-1] if gaps else None,
         "liquidity_sweeps": sweeps,
         "latest_liquidity_sweep": sweeps[-1] if sweeps else None,
+        "order_blocks": order_blocks,
+        "latest_order_block": order_blocks[-1] if order_blocks else None,
         "checked_at": candles[-1]["datetime"] if candles else None,
         "warning": "ICT detections are technical evidence, not guaranteed predictions."
     }

@@ -152,6 +152,16 @@ button, select {
 </div>
 <div class="muted" style="margin-top:16px">LATEST FAIR VALUE GAP</div>
 <div id="ictLatestFVG" style="margin-top:8px">Loading...</div>
+<div class="muted" style="margin-top:18px">ICT ORDER BLOCKS</div>
+<div style="display:flex;justify-content:space-between;margin-top:10px">
+ <span>Bullish blocks</span><strong id="ictBullishOB">--</strong>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:8px">
+ <span>Bearish blocks</span><strong id="ictBearishOB">--</strong>
+</div>
+<div class="muted" style="margin-top:14px">LATEST ORDER BLOCK</div>
+<div id="ictLatestOB" style="margin-top:8px">Loading...</div>
+<div id="ictOrderBlockList" style="margin-top:10px;font-size:13px"></div>
 <div class="muted" id="ictWarning" style="margin-top:12px;font-size:12px"></div>
 </div>
 
@@ -512,6 +522,37 @@ function renderICT(data){
           " - " + formatPrice(latest.high) +
           " | " + latest.status
         : "No Fair Value Gap detected";
+
+    const orderBlocks = ict.order_blocks || [];
+    const bullishOB = orderBlocks.filter(
+        ob => ob.type === "BULLISH ORDER BLOCK"
+    );
+    const bearishOB = orderBlocks.filter(
+        ob => ob.type === "BEARISH ORDER BLOCK"
+    );
+
+    document.getElementById("ictBullishOB").textContent = bullishOB.length;
+    document.getElementById("ictBearishOB").textContent = bearishOB.length;
+
+    const latestOB = ict.latest_order_block;
+    document.getElementById("ictLatestOB").textContent = latestOB
+        ? latestOB.type + " | " +
+          formatPrice(latestOB.low) + " - " +
+          formatPrice(latestOB.high) + " | " +
+          latestOB.status
+        : "No Order Block detected";
+
+    document.getElementById("ictOrderBlockList").innerHTML =
+        orderBlocks.length
+        ? orderBlocks.slice().reverse().map(ob =>
+            `<div style="padding:8px 0;border-bottom:1px solid #333">
+              <strong>${ob.type}</strong><br>
+              Zone: ${formatPrice(ob.low)} - ${formatPrice(ob.high)}<br>
+              Midpoint: ${formatPrice(ob.midpoint)}<br>
+              Status: ${ob.status}
+            </div>`
+          ).join("")
+        : "No confirmed Order Blocks available";
 
     document.getElementById("ictWarning").textContent =
         ict.warning || "ICT results are technical evidence, not guaranteed predictions.";
