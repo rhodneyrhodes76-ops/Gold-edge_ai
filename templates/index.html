@@ -106,7 +106,28 @@ button, select {
 <div class="price" id="price">Loading...</div>
 <div class="muted" id="updated">Waiting for market data</div>
 </div>
+<div class="card" id="sentimentCard">
+  <div class="muted">AI MARKET SENTIMENT</div>
+  <div class="value" id="sentimentDirection">Calculating...</div>
+  <div class="muted" id="sentimentEvidence">Technical evidence: --</div>
 
+  <div style="margin-top:14px">
+    <div class="muted">BULLISH EVIDENCE</div>
+    <div class="value" id="sentimentBullish">--</div>
+
+    <div class="muted">BEARISH EVIDENCE</div>
+    <div class="value" id="sentimentBearish">--</div>
+  </div>
+
+  <div class="muted" id="sentimentTimeframes" style="margin-top:12px">
+    Timeframe agreement: --
+  </div>
+
+  <div id="sentimentReasons" style="margin-top:12px"></div>
+  <div class="muted" id="sentimentWarning" style="margin-top:12px">
+    Waiting for market analysis...
+  </div>
+</div>
 <div class="card">
 <div class="muted">TIMEFRAME</div>
 <select id="timeframe" onchange="loadData()">
@@ -298,7 +319,7 @@ const chart=LightweightCharts.createChart(chartElement,{
   width:chartElement.clientWidth,
   height:350,
   layout:{background:{color:'#080808'},textColor:'#f5c542'},
-  grid:{vertLines:{color:'#292010'},horzLines:{color:'#292010'}}, 
+ grid:{vertLines:{color:'#292010'},horzLines:{color:'#292010'}},
   timeScale:{timeVisible:true,secondsVisible:false},
   rightPriceScale:{borderColor:'#26364c'}
 });
@@ -412,7 +433,8 @@ async function loadMultiTimeframe(){
   const response = await fetch('/api/multi-timeframe');
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || 'Analysis unavailable');
-
+latestMultiTimeframe = data;
+renderMarketSentiment();
   show('mtfOverall', data.overall_trend || 'UNKNOWN');
 
   const grid = document.getElementById('mtfGrid');
@@ -442,6 +464,8 @@ async function loadMultiTimeframe(){
 
   show('mtfChecked', 'Last checked: ' + (data.checked_at || '--'));
  } catch(error) {
+  latestMultiTimeframe = null;
+  renderMarketSentiment();
   show('mtfOverall', 'UNAVAILABLE');
   show('mtfChecked', error.message);
  }
@@ -561,7 +585,111 @@ function renderICT(data){
     document.getElementById("ictWarning").textContent =
         ict.warning || "ICT results are technical evidence, not guaranteed predictions.";
 }
+let latestMarketAnalysis = null;
+let latestMultiTimeframe = null;
 
+function renderMarketSentiment(){
+    const direction = document.getElementById("sentimentDirection");
+    const evidence = document.getElementById("sentimentEvidence");
+    const bullishEl = document.getElementById("sentimentBullish");
+    const bearishEl = document.getElementById("sentimentBearish");
+    const timeframesEl = document.getElementById("sentimentTimeframes");
+    const reasonsEl = document.getElementById("sentimentReasons");
+    const warningEl = document.getElementById("sentimentWarning");
+
+    if (!latestMarketAnalysis || !latestMarketAnalysis.strength){
+        direction.textContent = "ANALYSIS UNAVAILABLE";
+        evidence.textContent = "Technical evidence: unavailable";
+        bullishEl.textContent = "--";
+        bearishEl.textContent = "--";
+        timeframesEl.textContent = "Timeframe agreement: unavailable";
+        reasonsEl.replaceChildren();
+        warningEl.textContent = "Waiting for valid market analysis.";
+        return;
+    }
+
+    const data = latestMarketAnalysis;
+    const strength = data.strength;
+    const mtf = latestMultiTimeframe;
+    const results = mtf && Array.isArray(mtf.results) ? mtf.results : [];
+
+    const bullishTF = results.filter(item => item.trend === "BULLISH").length;
+    const bearishTF = results.filter(item => item.trend === "BEARISH").length;
+    const mixedTF = results.filter(item => item.trend === "MIXED").length;
+    const unavailableTF = results.filter(item =>
+        item.trend === "UNAVAILABLE"
+    ).length + Math.max(0, 6 - results.length);
+
+    const bullish = Number(strength.bullish || 0) + bullishTF * 5;
+    const bearish = Number(strength.bearish || 0) + bearishTF * 5;
+    const difference = bullish - bearish;
+
+    let sentiment = "NEUTRAL";
+    if (difference >= 15) sentiment = "BULLISH";
+    else if (difference <= -15) sentiment = "BEARISH";
+
+    const alignment = Math.min(100, Math.round(
+        Math.abs(difference) / 130 * 100
+    ));
+
+    direction.textContent = sentiment;
+    direction.style.color =
+        sentiment === "BULLISH" ? "#22c55e" :
+        sentiment === "BEARISH" ? "#ef4444" : "#f5c542";
+
+    evidence.textContent =
+        "Technical evidence alignment: " + alignment + "/100 (not probability)";
+
+    bullishEl.textContent = Math.round(bullish) + " points";
+    bearishEl.textContent = Math.round(bearish) + " points";
+
+    timeframesEl.textContent = mtf
+        ? "Timeframe agreement: " + bullishTF + " bullish, " +
+          bearishTF + " bearish, " + mixedTF + " mixed, " +
+          unavailableTF + " unavailable out of 6"
+        : "Timeframe agreement: unavailable";
+
+    const reasons = [
+        "Selected timeframe trend: " + (data.trend || "UNKNOWN"),
+        "Buying/selling pressure: " + (strength.pressure || "UNKNOWN")
+    ];
+
+    if (data.rsi !== null && data.rsi !== undefined){
+        reasons.push("RSI: " + data.rsi);
+    }
+
+    if (mtf){
+        reasons.push("Multi-timeframe trend: " + (mtf.overall_trend || "UNKNOWN"));
+    }
+
+    reasonsEl.replaceChildren();
+    reasons.forEach(reason => {
+        const item = document.createElement("div");
+        item.textContent = "• " + reason;
+        item.style.marginTop = "6px";
+        reasonsEl.appendChild(item);
+    });
+
+    const warnings = [];
+
+    if (!mtf || unavailableTF > 0){
+        warnings.push("Some multi-timeframe data is unavailable; analysis is partial.");
+    }
+
+    if (mixedTF > 0){
+        warnings.push("Some timeframes have mixed technical trends.");
+    }
+
+    if (data.news_status !== "CONNECTED"){
+        warnings.push("Economic calendar disconnected. Existing trading safety restriction remains active.");
+    } else if (data.news_blocked){
+        warnings.push("High-impact USD news restriction active. New trades are paused.");
+    }
+
+    warnings.push("Technical evidence only. Not a probability or guaranteed trading prediction.");
+
+    warningEl.textContent = warnings.join(" ");
+}
 function renderStrength(data){
     const strength = data.strength;
     if (!strength) return;
@@ -587,10 +715,12 @@ async function loadData(){
   const interval=document.getElementById('timeframe').value;
   const response=await fetch('/api/analysis?interval='+interval);
   const data=await response.json();
-  if(!response.ok)throw new Error(data.error||'Market data unavailable');
+    if(!response.ok)throw new Error(data.error||'Market data unavailable');
 
-  renderStrength(data);
-  renderICT(data);
+  latestMarketAnalysis = data;
+  renderMarketSentiment();
+
+  renderStrength(data);  renderICT(data);
 
   show('price',Number(data.price).toFixed(3));
   show('updated','Last candle: '+data.updated);
@@ -644,9 +774,10 @@ async function loadData(){
   ema20.setData(calculateEMA(closes,20));
   ema50.setData(calculateEMA(closes,50));
   chart.timeScale().fitContent();
- }catch(error){
-  show('signal','ERROR');
-  show('reason',error.message);
+  }catch(error){
+  latestMarketAnalysis = null;
+  renderMarketSentiment();
+  show('signal','ERROR');  show('reason',error.message);
  }
 }
 
