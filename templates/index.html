@@ -245,7 +245,9 @@ Technical evidence scores, not probabilities or guaranteed predictions.
 <div class="grid">
 <div><div class="muted">ENTRY</div><div class="value" id="entry">--</div></div>
 <div><div class="muted">STOP LOSS</div><div class="value red" id="sl">--</div></div>
-<div><div class="muted">TAKE PROFIT</div><div class="value green" id="tp">--</div></div>
+<div><div class="muted">TAKE PROFIT 1</div><div class="value green" id="tp1">--</div></div>
+<div><div class="muted">TAKE PROFIT 2</div><div class="value green" id="tp2">--</div></div>
+<div><div class="muted">TAKE PROFIT 3</div><div class="value green" id="tp">--</div></div>
 </div>
 </div>
 
@@ -732,7 +734,9 @@ async function loadData(){
   show('atr',data.atr);
   show('entry',data.entry);
   show('sl',data.stop_loss);
-  show('tp',data.take_profit);
+  show('tp1',data.tp1);
+  show('tp2',data.tp2);
+  show('tp',data.tp3 ?? data.take_profit);
   show('support',data.support);
   show('resistance',data.resistance);
 

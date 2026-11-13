@@ -901,14 +901,23 @@ def analyze(candles):
 
     stop_loss = None
     take_profit = None
+    tp1 = None
+    tp2 = None
+    tp3 = None
 
     if atr is not None and signal == "BUY":
         stop_loss = price - 1.5 * atr
-        take_profit = price + 3 * atr
+        tp1 = price + 1.5 * atr
+        tp2 = price + 2.25 * atr
+        tp3 = price + 3 * atr
+        take_profit = tp3
 
     elif atr is not None and signal == "SELL":
         stop_loss = price + 1.5 * atr
-        take_profit = price - 3 * atr
+        tp1 = price - 1.5 * atr
+        tp2 = price - 2.25 * atr
+        tp3 = price - 3 * atr
+        take_profit = tp3
 
     news_error = None
 
@@ -930,6 +939,9 @@ def analyze(candles):
         reason = "Economic calendar unavailable. Trading signals paused."
         stop_loss = None
         take_profit = None
+        tp1 = None
+        tp2 = None
+        tp3 = None
         setup_score = 0
 
     elif news_blocked:
@@ -937,6 +949,9 @@ def analyze(candles):
         reason = "High-impact USD news window. New trades paused."
         stop_loss = None
         take_profit = None
+        tp1 = None
+        tp2 = None
+        tp3 = None
 
     news_warning = (
         "HIGH IMPACT USD NEWS: " + news["blocked"]["event"]
@@ -980,6 +995,9 @@ def analyze(candles):
         "entry": round(price, 3) if signal != "WAIT" else None,
         "stop_loss": round(stop_loss, 3) if stop_loss is not None else None,
         "take_profit": round(take_profit, 3) if take_profit is not None else None,
+        "tp1": round(tp1, 3) if tp1 is not None else None,
+        "tp2": round(tp2, 3) if tp2 is not None else None,
+        "tp3": round(tp3, 3) if tp3 is not None else None,
         "news_warning": news_warning,
         "news_status": news["status"],
         "news_blocked": news_blocked,
