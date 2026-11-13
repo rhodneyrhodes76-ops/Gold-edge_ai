@@ -12,8 +12,11 @@ API_KEY = os.getenv("TWELVE_DATA_API_KEY", "")
 SYMBOL = "XAU/USD"
 
 cache = {}
-CACHE_SECONDS = 60
+CACHE_SECONDS = 300
 
+failure_cache = {}
+FAILURE_CACHE_SECONDS = 60
+RATE_LIMIT_UNTIL = 0
 NEWS_URL = "https://showmytrades.com/api/public/calendar/v1"
 NEWS_CACHE_SECONDS = 3600
 NEWS_CACHE_FILE = os.path.join(os.path.dirname(__file__), "news_cache.json")
@@ -325,45 +328,106 @@ def calculate_indicators(candles):
 
 # ---------------- MARKET DATA ----------------
 
+
 def get_market_data(interval):
+    global RATE_LIMIT_UNTIL
+
     if not API_KEY:
-        raise ValueError("Add your Twelve Data API key first.")
+        raise ValueError("Twelve Data API key is not configured.")
 
     now = time.time()
     key = interval
 
+    # Return successful cached market data.
     if key in cache and now - cache[key]["time"] < CACHE_SECONDS:
         return cache[key]["data"]
 
-    response = requests.get(
-        "https://api.twelvedata.com/time_series",
-        params={
-            "symbol": SYMBOL,
-            "interval": interval,
-            "outputsize": 250,
-            "apikey": API_KEY,
-            "format": "JSON"
-        },
-        timeout=20
-    )
+    # Avoid repeating recently failed requests.
+    if key in failure_cache:
+        failed = failure_cache[key]
+        if now - failed["time"] < FAILURE_CACHE_SECONDS:
+            raise ValueError(failed["error"])
 
-    response.raise_for_status()
-    data = response.json()
+    # Shared cooldown after an API rate-limit response.
+    if now < RATE_LIMIT_UNTIL:
+        message = "Twelve Data rate limit reached. Requests temporarily paused."
+        failure_cache[key] = {
+            "time": now,
+            "error": message
+        }
+        raise ValueError(message)
 
-    if "values" not in data:
-        raise ValueError(data.get("message", "Market data unavailable."))
+    try:
+        response = requests.get(
+            "https://api.twelvedata.com/time_series",
+            params={
+                "symbol": SYMBOL,
+                "interval": interval,
+                "outputsize": 250,
+                "apikey": API_KEY,
+                "format": "JSON"
+            },
+            timeout=20
+        )
 
-    candles = list(reversed(data["values"]))
+        if response.status_code == 429:
+            RATE_LIMIT_UNTIL = time.time() + 60
+            raise ValueError(
+                "Twelve Data rate limit reached. Requests paused for 60 seconds."
+            )
 
-    for candle in candles:
-        for field in ("open", "high", "low", "close"):
-            candle[field] = float(candle[field])
+        if response.status_code >= 400:
+            raise ValueError(
+                f"Twelve Data request failed (HTTP {response.status_code})."
+            )
 
-    if len(candles) < 51:
-        raise ValueError("Not enough candles for analysis.")
+        data = response.json()
 
-    cache[key] = {"time": now, "data": candles}
-    return candles
+        if not isinstance(data, dict) or "values" not in data:
+            raise ValueError(
+                "Twelve Data returned no market candles. Check API access and quota."
+            )
+
+        candles = list(reversed(data["values"]))
+
+        for candle in candles:
+            for field in ("open", "high", "low", "close"):
+                candle[field] = float(candle[field])
+
+        if len(candles) < 51:
+            raise ValueError("Not enough candles for analysis.")
+
+        cache[key] = {
+            "time": time.time(),
+            "data": candles
+        }
+
+        failure_cache.pop(key, None)
+
+        return candles
+
+    except ValueError as error:
+        failure_cache[key] = {
+            "time": time.time(),
+            "error": str(error)
+        }
+        raise
+
+    except requests.RequestException:
+        message = "Unable to connect to Twelve Data. Check your internet connection."
+        failure_cache[key] = {
+            "time": time.time(),
+            "error": message
+        }
+        raise ValueError(message)
+
+    except Exception:
+        message = "Market data could not be processed."
+        failure_cache[key] = {
+            "time": time.time(),
+            "error": message
+        }
+        raise ValueError(message)
 
 
 
